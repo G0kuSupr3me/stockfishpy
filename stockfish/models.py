@@ -510,7 +510,11 @@ class Stockfish:
                         evaluation = {
                             "type": splitted_text[n + 1],
                             "value": int(splitted_text[n + 2]) * compare,
+                            "line": []
                         }
+                        for m in range(n, len(splitted_text)):
+                            if splitted_text[m] == 'pv':
+                                evaluation['line'] = splitted_text[m + 1:]
             elif splitted_text[0] == "bestmove":
                 return evaluation
 
