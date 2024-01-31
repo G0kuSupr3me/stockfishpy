@@ -4,7 +4,6 @@
     :copyright: (c) 2016-2021 by Ilya Zhelyabuzhsky.
     :license: MIT, see LICENSE for more details.
 """
-import time
 import subprocess
 from typing import Any, List, Optional
 import copy
@@ -517,7 +516,84 @@ class Stockfish:
                                 evaluation['line'] = splitted_text[m + 1:]
             elif splitted_text[0] == "bestmove":
                 return evaluation
+            
+    def get_evaluation_and_top_moves(self) -> tuple[dict, list[dict]]:
+        """Evaluates the current position and returns the top moves
+        Returns:
+            A dictionary for the evaluation, and a list with a dictionary
+            for each top move, there are as many top move as the setted MultiPV.
+        
+        Evaluation:
+            A dictionary with the evaluation and as many dictionariries as MultiPV
+        each with information of every top move.
 
+        Top Moves:
+            In each top move dictionary, there are keys for Move, Centipawn, and Mate;
+                the corresponding value for either the Centipawn or Mate key will be None.
+                If there are no moves in the position, an empty list is returned.
+                They follow better first order.
+        """
+
+        evaluation = dict()
+        fen_position = self.get_fen_position()
+        compare = 1 if "w" in fen_position else -1
+        self._put(f"position {fen_position}")
+        self._go()
+        lines = []
+        while True:
+            text = self._read_line()
+            splitted_text = text.split(" ")
+            lines.append(splitted_text)
+            if splitted_text[0] == "info":
+                for n in range(len(splitted_text)):
+                    if splitted_text[n] == "score" and splitted_text[(splitted_text.index("multipv") + 1)] == '1':
+                        evaluation = {
+                            "type": splitted_text[n + 1],
+                            "value": int(splitted_text[n + 2]) * compare,
+                            "line": []
+                        }
+                        for m in range(n, len(splitted_text)):
+                            if splitted_text[m] == 'pv':
+                                evaluation['line'] = splitted_text[m + 1:]
+            elif splitted_text[0] == "bestmove":
+                break
+
+        top_moves = [] 
+        for current_line in reversed(lines):
+            if current_line[0] == "bestmove":
+                if current_line[1] == "(none)":
+                    top_moves = []
+                    break
+            elif (
+                ("multipv" in current_line)
+                and ("depth" in current_line)
+                and current_line[current_line.index("depth") + 1] == self.depth
+            ):
+                has_centipawn_value = "cp" in current_line
+                has_mate_value = "mate" in current_line
+                if has_centipawn_value == has_mate_value:
+                    raise RuntimeError(
+                        "Having a centipawn value and mate value should be mutually exclusive."
+                    )
+                top_moves.insert(
+                    0,
+                    {
+                        "Move": current_line[current_line.index("pv") + 1],
+                        "Centipawn": int(current_line[current_line.index("cp") + 1])
+                        * compare
+                        if has_centipawn_value
+                        else None,
+                        "Mate": int(current_line[current_line.index("mate") + 1])
+                        * compare
+                        if has_mate_value
+                        else None,
+                    },
+                )
+            else:
+                break
+        
+        return evaluation, top_moves
+        
     def get_top_moves(self, num_top_moves: int = 5) -> List[dict]:
         """Returns info on the top moves in the position.
 
@@ -538,9 +614,7 @@ class Stockfish:
         if num_top_moves != self._parameters["MultiPV"]:
             self._set_option("MultiPV", num_top_moves)
             self._parameters.update({"MultiPV": num_top_moves})
-        t = time.time()
         self._go()
-        print(time.time() - t)
         lines = []
         while True:
             text = self._read_line()
