@@ -4,7 +4,7 @@
     :copyright: (c) 2016-2021 by Ilya Zhelyabuzhsky.
     :license: MIT, see LICENSE for more details.
 """
-
+import time
 import subprocess
 from typing import Any, List, Optional
 import copy
@@ -538,7 +538,9 @@ class Stockfish:
         if num_top_moves != self._parameters["MultiPV"]:
             self._set_option("MultiPV", num_top_moves)
             self._parameters.update({"MultiPV": num_top_moves})
+        t = time.time()
         self._go()
+        print(time.time() - t)
         lines = []
         while True:
             text = self._read_line()
