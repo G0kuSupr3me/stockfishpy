@@ -491,6 +491,7 @@ class Stockfish:
 
         Returns:
             A dictionary of the current advantage with "type" as "cp" (centipawns) or "mate" (checkmate in)
+            and the best line
         """
 
         evaluation = dict()
@@ -524,8 +525,8 @@ class Stockfish:
             for each top move, there are as many top move as the setted MultiPV.
         
         Evaluation:
-            A dictionary with the evaluation and as many dictionariries as MultiPV
-        each with information of every top move.
+            A dictionary of the current advantage with "type" as "cp" (centipawns) or "mate" (checkmate in)
+            and the best line
 
         Top Moves:
             In each top move dictionary, there are keys for Move, Centipawn, and Mate;
@@ -546,15 +547,16 @@ class Stockfish:
             lines.append(splitted_text)
             if splitted_text[0] == "info":
                 for n in range(len(splitted_text)):
-                    if splitted_text[n] == "score" and splitted_text[(splitted_text.index("multipv") + 1)] == '1':
-                        evaluation = {
-                            "type": splitted_text[n + 1],
-                            "value": int(splitted_text[n + 2]) * compare,
-                            "line": []
-                        }
-                        for m in range(n, len(splitted_text)):
-                            if splitted_text[m] == 'pv':
-                                evaluation['line'] = splitted_text[m + 1:]
+                    if splitted_text[n] == "score":
+                        if "multipv" in splitted_text and splitted_text[(splitted_text.index("multipv") + 1)] == '1':
+                            evaluation = {
+                                "type": splitted_text[n + 1],
+                                "value": int(splitted_text[n + 2]) * compare,
+                                "line": []
+                            }
+                            for m in range(n, len(splitted_text)):
+                                if splitted_text[m] == 'pv':
+                                    evaluation['line'] = splitted_text[m + 1:]
             elif splitted_text[0] == "bestmove":
                 break
 
@@ -593,7 +595,63 @@ class Stockfish:
                 break
         
         return evaluation, top_moves
+    
+    def get_top_lines(self) -> List[dict]:
+        """Returns info on the top lines in the position, as many as the set MultiPV
+
+        Returns:
+            A list of dictionaries. In each dictionary, there are keys for Line, Centipawn, and Mate;
+            the corresponding value for either the Centipawn or Mate key will be None.
+            If there are no moves in the position, an empty list is returned.
+        """
+        self._go()
+        lines = []
+        while True:
+            text = self._read_line()
+            splitted_text = text.split(" ")
+            lines.append(splitted_text)
+            if splitted_text[0] == "bestmove":
+                break
+        top_lines: List[dict] = []
+        multiplier = 1 if ("w" in self.get_fen_position()) else -1
+        for current_line in reversed(lines):
+            if current_line[0] == "bestmove":
+                if current_line[1] == "(none)":
+                    top_lines = []
+                    break
+            elif (
+                ("multipv" in current_line)
+                and ("depth" in current_line)
+                and current_line[current_line.index("depth") + 1] == self.depth
+            ):
+                has_centipawn_value = "cp" in current_line
+                has_mate_value = "mate" in current_line
+                if has_centipawn_value == has_mate_value:
+                    raise RuntimeError(
+                        "Having a centipawn value and mate value should be mutually exclusive."
+                    )
+                top_lines.insert(
+                    0,
+                    {
+                        "Line": current_line[current_line.index("pv") + 1:],
+                        "Centipawn": int(current_line[current_line.index("cp") + 1])
+                        * multiplier
+                        if has_centipawn_value
+                        else None,
+                        "Mate": int(current_line[current_line.index("mate") + 1])
+                        * multiplier
+                        if has_mate_value
+                        else None,
+                    },
+                )
+            else:
+                break
         
+        if top_lines == []:
+            top_lines = [{'Line': [], 'Centipawn': None, 'Mate': 0}]
+            
+        return top_lines  
+      
     def get_top_moves(self, num_top_moves: int = 5) -> List[dict]:
         """Returns info on the top moves in the position.
 
